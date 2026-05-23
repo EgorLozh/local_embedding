@@ -1,0 +1,67 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:${VLLM_IMAGE_TAG:-latest}
+    container_name: local-embedding-vllm
+    ipc: host
+    restart: unless-stopped
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/root/.cache/huggingface
+    command:
+      - --model
+      - ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      - --task
+      - embed
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --trust-remote-code
+      - --max-model-len
+      - "${VLLM_MAX_MODEL_LEN:-8192}"
+      - --gpu-memory-utilization
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.5}"
+      - --max-num-seqs
+      - "${VLLM_MAX_NUM_SEQS:-256}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${NVIDIA_GPU_COUNT:-1}
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    networks:
+      - embedding-net
+
+  api:
+    build: .
+    container_name: local-embedding-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:8080"
+    env_file:
+      - .env
+    environment:
+      VLLM_BASE_URL: http://vllm:8000
+    depends_on:
+      vllm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - embedding-net
+
+networks:
+  embedding-net:
+    driver: bridge
