@@ -1,11 +1,10 @@
 # GPU overlay — use on Linux servers with NVIDIA Container Toolkit installed.
-# This is the default in docker-compose.yml; kept here for explicit usage:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 services:
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cuda-1.9}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_GPU_IMAGE_TAG:-cuda-1.9}
     deploy:
       resources:
         reservations:

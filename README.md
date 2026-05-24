@@ -50,7 +50,7 @@ git clone https://github.com/EgorLozh/local_embedding.git
 cd local_embedding
 
 cp .env.example .env
-# Set TEI_IMAGE_TAG for your GPU (see table below)
+# Set TEI_GPU_IMAGE_TAG for your GPU (see table below)
 
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
@@ -139,7 +139,8 @@ Copy [`.env.example`](.env.example) to `.env`. Key variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TEI_IMAGE_TAG` | TEI Docker tag for your GPU arch | `cuda-1.9` |
+| `TEI_GPU_IMAGE_TAG` | TEI Docker tag for your GPU arch | `cuda-1.9` |
+| `TEI_CPU_IMAGE_TAG` | TEI Docker tag for CPU mode | `cpu-1.9` |
 | `EMBEDDING_MODEL` | HuggingFace model ID | `BAAI/bge-m3` |
 | `TEI_MAX_BATCH_TOKENS` | Max tokens per batch | `16384` |
 | `TEI_MAX_CONCURRENT_REQUESTS` | Max concurrent requests | `512` |
@@ -221,11 +222,23 @@ docker system prune -a
 docker system df
 ```
 
+**TEI logs show `nvidia-smi command not found` in CPU mode**
+
+Your `.env` still had `TEI_IMAGE_TAG=cuda-1.9`, which forced the CUDA image even with `docker-compose.cpu.yml`. Recreate with the updated config:
+
+```bash
+# Update .env: remove TEI_IMAGE_TAG, use TEI_GPU_IMAGE_TAG / TEI_CPU_IMAGE_TAG instead
+cp .env.example .env   # or edit .env manually
+
+docker compose down
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --pull always
+```
+
 **TEI stays unhealthy**
 
 - Check logs: `docker compose logs tei`
 - Ensure GPU is visible inside the container.
-- Pick the correct `TEI_IMAGE_TAG` for your GPU architecture.
+- Pick the correct `TEI_GPU_IMAGE_TAG` for your GPU architecture.
 - First model download can take several minutes.
 
 **API returns `503` / degraded health**
@@ -235,7 +248,7 @@ docker system df
 
 **CUDA / driver mismatch**
 
-- Use a pinned `TEI_IMAGE_TAG` matching your GPU compute capability (see table above).
+- Use a pinned `TEI_GPU_IMAGE_TAG` matching your GPU compute capability (see table above).
 
 ## Development (local, without Docker)
 

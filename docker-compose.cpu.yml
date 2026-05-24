@@ -2,8 +2,10 @@
 # (local Windows dev, or Linux without GPU drivers).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+#
+# Note: always uses the CPU image; TEI_GPU_IMAGE_TAG from .env is ignored.
 
 services:
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cpu-1.9}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_CPU_IMAGE_TAG:-cpu-1.9}
     deploy: !reset null
