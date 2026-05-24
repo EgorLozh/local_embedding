@@ -11,7 +11,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    vllm_base_url: str = Field(default="http://vllm:8000", alias="VLLM_BASE_URL")
+    vllm_base_url: str = Field(default="http://tei:80", alias="VLLM_BASE_URL")
     vllm_embeddings_path: str = Field(
         default="/v1/embeddings", alias="VLLM_EMBEDDINGS_PATH"
     )

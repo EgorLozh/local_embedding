@@ -1,29 +1,19 @@
 services:
-  vllm:
-    image: vllm/vllm-openai:${VLLM_IMAGE_TAG:-latest}
-    container_name: local-embedding-vllm
-    ipc: host
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cuda-1.9}
+    container_name: local-embedding-tei
     restart: unless-stopped
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
     volumes:
-      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/root/.cache/huggingface
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/data
     command:
-      - --model
+      - --model-id
       - ${EMBEDDING_MODEL:-BAAI/bge-m3}
-      - --task
-      - embed
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --trust-remote-code
-      - --max-model-len
-      - "${VLLM_MAX_MODEL_LEN:-8192}"
-      - --gpu-memory-utilization
-      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.5}"
-      - --max-num-seqs
-      - "${VLLM_MAX_NUM_SEQS:-256}"
+      - --max-batch-tokens
+      - "${TEI_MAX_BATCH_TOKENS:-16384}"
+      - --max-concurrent-requests
+      - "${TEI_MAX_CONCURRENT_REQUESTS:-512}"
     deploy:
       resources:
         reservations:
@@ -32,11 +22,11 @@ services:
               count: ${NVIDIA_GPU_COUNT:-1}
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:80/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 300s
+      start_period: 120s
     networks:
       - embedding-net
 
@@ -49,9 +39,9 @@ services:
     env_file:
       - .env
     environment:
-      VLLM_BASE_URL: http://vllm:8000
+      VLLM_BASE_URL: http://tei:80
     depends_on:
-      vllm:
+      tei:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]

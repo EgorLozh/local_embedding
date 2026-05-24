@@ -1,16 +1,29 @@
 # Local Embedding Service
 
-Production-ready local embedding API powered by [vLLM](https://docs.vllm.ai/) (`BAAI/bge-m3`) and a FastAPI proxy. All inference runs inside Docker on your GPU — no cloud APIs.
+Production-ready local embedding API powered by [Text Embeddings Inference (TEI)](https://huggingface.co/docs/text-embeddings-inference) (`BAAI/bge-m3`) and a FastAPI proxy. All inference runs inside Docker on your GPU — no cloud APIs.
 
 ## Architecture
 
 ```
-Client  →  FastAPI (:8080)  →  vLLM (:8000, /v1/embeddings)  →  GPU
+Client  →  FastAPI (:8080)  →  TEI (:80, /v1/embeddings)  →  GPU
 ```
 
 - **POST /embed** — single text → embedding vector
-- **POST /embed/batch** — multiple texts → list of vectors (one vLLM call)
-- **GET /health** — API + vLLM upstream status
+- **POST /embed/batch** — multiple texts → list of vectors (one upstream call)
+- **GET /health** — API + TEI upstream status
+
+## Why TEI instead of vLLM?
+
+For embedding-only workloads, [TEI](https://github.com/huggingface/text-embeddings-inference) is a better fit than vLLM:
+
+| | TEI | vLLM |
+|---|-----|------|
+| Purpose | Embeddings only | Full LLM inference |
+| Docker image | ~1–2 GB | ~8–9 GB |
+| Boot time | Seconds | Minutes |
+| API | OpenAI `/v1/embeddings` | OpenAI `/v1/embeddings` |
+
+The FastAPI layer is unchanged — both backends speak the same OpenAI-compatible protocol.
 
 ## Prerequisites
 
@@ -33,18 +46,18 @@ git clone https://github.com/EgorLozh/local_embedding.git
 cd local_embedding
 
 cp .env.example .env
-# Edit .env if needed (GPU memory, HF_TOKEN, ports)
+# Edit .env if needed (TEI image tag for your GPU, HF_TOKEN, ports)
 
 docker compose up -d --build
 ```
 
-First startup downloads **BAAI/bge-m3** (~2 GB) into the HuggingFace cache volume. vLLM healthcheck allows up to 5 minutes (`start_period: 300s`).
+First startup downloads **BAAI/bge-m3** (~570 MB) into the HuggingFace cache volume. TEI healthcheck allows up to 2 minutes (`start_period: 120s`).
 
 Check status:
 
 ```bash
 docker compose ps
-docker compose logs -f vllm
+docker compose logs -f tei
 docker compose logs -f api
 ```
 
@@ -109,49 +122,73 @@ Copy [`.env.example`](.env.example) to `.env`. Key variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VLLM_GPU_MEMORY_UTILIZATION` | Fraction of GPU VRAM for vLLM | `0.5` |
-| `VLLM_MAX_MODEL_LEN` | Max sequence length | `8192` |
-| `VLLM_MAX_NUM_SEQS` | Max concurrent sequences | `256` |
+| `TEI_IMAGE_TAG` | TEI Docker tag for your GPU arch | `cuda-1.9` |
+| `EMBEDDING_MODEL` | HuggingFace model ID | `BAAI/bge-m3` |
+| `TEI_MAX_BATCH_TOKENS` | Max tokens per batch | `16384` |
+| `TEI_MAX_CONCURRENT_REQUESTS` | Max concurrent requests | `512` |
 | `API_PORT` | Host port for FastAPI | `8080` |
 | `HTTP_TIMEOUT_SEC` | Upstream request timeout | `30` |
-| `RETRY_MAX_ATTEMPTS` | Retries on transient vLLM errors | `3` |
+| `RETRY_MAX_ATTEMPTS` | Retries on transient upstream errors | `3` |
 | `BATCH_MAX_TEXTS` | Max texts per batch request | `64` |
 | `HF_TOKEN` | HuggingFace token (optional) | — |
 | `HF_CACHE_DIR` | Host HuggingFace cache mount | `~/.cache/huggingface` |
+
+### TEI image tags by GPU
+
+| GPU | Tag |
+|-----|-----|
+| Universal (default) | `cuda-1.9` |
+| RTX 40xx (Ada) | `89-1.9` |
+| RTX 30xx / A10 (Ampere 8.6) | `86-1.9` |
+| RTX 20xx / T4 (Turing, experimental) | `turing-1.9` |
+| A100 (Ampere 8.0) | `1.9` |
+
+See [TEI Docker images](https://github.com/huggingface/text-embeddings-inference#docker-images) for the full list.
 
 ## Error handling
 
 | HTTP | Cause |
 |------|--------|
 | `422` | Empty or whitespace-only text; batch too large |
-| `502` | Invalid response from vLLM |
-| `503` | vLLM unreachable or model error |
-| `504` | vLLM request timeout |
+| `502` | Invalid response from TEI |
+| `503` | TEI unreachable or model error |
+| `504` | TEI request timeout |
 
 ## Low-latency notes
 
-- FastAPI uses a shared `httpx.AsyncClient` with HTTP keep-alive to vLLM.
+- FastAPI uses a shared `httpx.AsyncClient` with HTTP keep-alive to TEI.
 - Batch requests send one upstream call with `input: ["...", "..."]`.
-- Tune `VLLM_MAX_NUM_SEQS` and `VLLM_GPU_MEMORY_UTILIZATION` for your GPU.
-- vLLM container uses `ipc: host` as recommended by vLLM docs.
+- Tune `TEI_MAX_CONCURRENT_REQUESTS` and `TEI_MAX_BATCH_TOKENS` for your GPU.
 
 ## Troubleshooting
 
-**vLLM stays unhealthy**
+**`no space left on device` during pull**
 
-- Check logs: `docker compose logs vllm`
+The old vLLM image is ~8.7 GB. Free disk space before pulling TEI:
+
+```bash
+# Remove failed/partial layers and unused images
+docker system prune -a
+
+# Check what's using space
+docker system df
+```
+
+**TEI stays unhealthy**
+
+- Check logs: `docker compose logs tei`
 - Ensure GPU is visible inside the container.
-- Lower `VLLM_GPU_MEMORY_UTILIZATION` if OOM occurs.
+- Pick the correct `TEI_IMAGE_TAG` for your GPU architecture.
 - First model download can take several minutes.
 
 **API returns `503` / degraded health**
 
-- Wait until vLLM finishes loading (`/health` on port 8000 inside the stack).
-- Confirm `VLLM_BASE_URL=http://vllm:8000` in `.env`.
+- Wait until TEI finishes loading (`/health` on port 80 inside the stack).
+- Confirm `VLLM_BASE_URL=http://tei:80` in `.env`.
 
 **CUDA / driver mismatch**
 
-- Use a pinned `VLLM_IMAGE_TAG` compatible with your driver, or set `VLLM_ENABLE_CUDA_COMPATIBILITY=1` on the vLLM service if supported.
+- Use a pinned `TEI_IMAGE_TAG` matching your GPU compute capability (see table above).
 
 ## Development (local, without Docker)
 
@@ -160,8 +197,8 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# Start vLLM separately, then:
-export VLLM_BASE_URL=http://localhost:8000
+# Start TEI separately, then:
+export VLLM_BASE_URL=http://localhost:8080
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
