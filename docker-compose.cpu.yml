@@ -1,0 +1,9 @@
+# CPU-only override — use when NVIDIA Container Toolkit is unavailable
+# (local Windows dev, or Linux without GPU drivers).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+
+services:
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cpu-1.9}
+    deploy: !reset null

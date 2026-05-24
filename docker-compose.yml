@@ -1,6 +1,6 @@
 services:
   tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cuda-1.9}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cpu-1.9}
     container_name: local-embedding-tei
     restart: unless-stopped
     environment:
@@ -14,13 +14,6 @@ services:
       - "${TEI_MAX_BATCH_TOKENS:-16384}"
       - --max-concurrent-requests
       - "${TEI_MAX_CONCURRENT_REQUESTS:-512}"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: ${NVIDIA_GPU_COUNT:-1}
-              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:80/health || exit 1"]
       interval: 30s

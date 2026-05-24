@@ -41,14 +41,31 @@ docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
 
 ## Quick start
 
+### GPU (Linux server)
+
+Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html):
+
 ```bash
 git clone https://github.com/EgorLozh/local_embedding.git
 cd local_embedding
 
 cp .env.example .env
-# Edit .env if needed (TEI image tag for your GPU, HF_TOKEN, ports)
+# Set TEI_IMAGE_TAG for your GPU (see table below)
 
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+Verify GPU access before starting:
+
+```bash
+nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
+```
+
+### CPU (local dev, no GPU)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
 ```
 
 First startup downloads **BAAI/bge-m3** (~570 MB) into the HuggingFace cache volume. TEI healthcheck allows up to 2 minutes (`start_period: 120s`).
@@ -161,6 +178,36 @@ See [TEI Docker images](https://github.com/huggingface/text-embeddings-inference
 - Tune `TEI_MAX_CONCURRENT_REQUESTS` and `TEI_MAX_BATCH_TOKENS` for your GPU.
 
 ## Troubleshooting
+
+**`could not select device driver "nvidia" with capabilities: [[gpu]]`**
+
+Docker cannot access the GPU. Either install the NVIDIA Container Toolkit (for GPU mode), or use CPU mode.
+
+On Ubuntu/Debian (GPU server):
+
+```bash
+# Install NVIDIA Container Toolkit
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Verify
+docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
+
+# Then start with GPU overlay
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+On Windows (Docker Desktop): GPU passthrough requires WSL2 backend + recent NVIDIA drivers. For local testing, use CPU mode instead:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d --build
+```
 
 **`no space left on device` during pull**
 
